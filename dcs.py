@@ -9,6 +9,8 @@ DCS's motivation was "to create a transparent interface between syntax and seman
 """
 
 import itertools
+from collections import defaultdict
+NULL = [] 
 
 class Relation(object):
     """  A procedure that is applied to two trees """
@@ -28,18 +30,18 @@ class Join(Relation):
     def lambda_formula(self, parent, child):
         return "%s = %s" % (parent, child)
 
+    def join_function(self, pc):
+        #print pc[0][self.parent_index-1], pc[1][self.child_index-1],pc[0][self.parent_index-1]== pc[1][self.child_index-1]
+        return pc[0][self.parent_index-1] == pc[1][self.child_index-1]
+
     def __call__(self, parent, child):
         """ Takes a cross product of tuples (the denotations of parent and child)
-        and filters the resulting tuples that match the equality constraint.
-        
+        and extracts all tuples that match the equality constraint.
         Then it "projects" the results and only takes those up to the parent's arity"""
 
-        def join_constraint(pc):
-            #print pc[0][self.parent_index-1], pc[1][self.child_index-1],pc[0][self.parent_index-1]== pc[1][self.child_index-1]
-            return pc[0][self.parent_index-1] == pc[1][self.child_index-1]
-
+        # we dont keep stores in the denotation, so we don't have to remove them.
         results = []
-        for match in filter(join_constraint, itertools.product(parent.denotation, child.denotation)):
+        for match in filter(self.join_function, itertools.product(parent.denotation, child.denotation)):
             # the projection stage -- take the subset of the tuples corresponding
             # to the arity of the parent's predicate
             results.append(match[0:parent.arity])
@@ -58,7 +60,10 @@ class Aggregate(Relation):
         return "\sigma"
 
     def __call__(self, parent, child):
-        child.ground(None)
+        aggregated = defaultdict(list)
+        for match in itertools.product(parent.denotation, child.denotation):
+            print "MATCH", match
+
         return [child.denotation]
 
 class MarkRelation(Relation):
@@ -105,15 +110,18 @@ class Execute(Relation):
     def __repr__(self):
         return "x_i"
 
+    def __call__(self, parent, child):
+        print "called execute but i don't know what to do"
+        return child.denotation
 
 class DCSTree(object):
 
-    def __init__(self, predicate):
+    def __init__(self, predicate=None):
         self.predicate = predicate 
         self.arity = 1  # arity of the predicate
         # edges is a list of (Relation, DCSTree) tuples
         self.edges = []
-        self.denotation = None
+        self.denotation = [NULL]
         self.stores = None # for marked nodes
 
     def add_child(self, relation, child):
@@ -161,10 +169,11 @@ class DCSTree(object):
         if not self.is_grounded():
             raise NotImplemented()
 
+        denotation = []
         for relation, child in self.edges:
-            self.denotation = relation(self, child)
+            denotation = relation(self, child)
 
-        return self.denotation
+        return denotation
     
 
     def __repr__(self):
@@ -224,6 +233,15 @@ class DCSTree(object):
         pass
 
 
+def count(a):
+    return len(a)
+
+def argmax(measure, a):
+    return max(a, key=measure)
+
+def argmin(measure, a):
+    return min(a, key=measure)
+
 # define generalized quantifiers
 # a is restrictor and b is a nuclear scope
 def some(a, b):
@@ -246,6 +264,9 @@ def more(measure, a, b):
 def less(measure, a, b):
     return min(measure(a)) < min(measure(b))
 
+#------------------------------------------------------------------------------
+# Join function
+#------------------------------------------------------------------------------
 d = DCSTree("city")
 d.add_child(Join(1,1), DCSTree("major"))
 loc = DCSTree("loc")
@@ -263,5 +284,36 @@ b.denotation = [("poodle",), ("shitzu",)]
 a.add_child(Join(2,1), b)
 print a.ground(None)  # => [(dog, poodle)]
 
+#------------------------------------------------------------------------------
+# Adding Aggregation (Page 15)
+#------------------------------------------------------------------------------
+tfb = DCSTree()  # 24 b
+tfb.add_child(argmax, 
 
 
+#------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
+# state borders state
+null = DCSTree()
+
+state = DCSTree("state")
+state.denotation = [("AL",), ("AK",), ("CT",)]
+
+border = DCSTree("border")
+border.denotation = [("FL", "AL"), 
+                     ("GA", "AL"),
+                     ("MS", "AL"),
+                     ("TN", "AL"),]
+
+state2 = DCSTree("state")
+state2.denotation = [("AL",), ("AK",), ("CT",)]
+
+#null.add_child(Aggregate(), state)
+state.add_child(Join(1,1), border)
+border.add_child(Join(2,1), state2)
+state2.add_child(Execute(), DCSTree())
+
+#print null 
+#print null.ground(None)
+
+print state.ground(None)
