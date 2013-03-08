@@ -102,10 +102,13 @@ class Quantify(MarkRelation):
 
 class Execute(Relation):
     """ Processes a marked descendent node and applies it at the desired
-    pont. """
+    point. """
 
-    def __init__(self, *indicies):
-        self.indicies = indicies
+    def __init__(self, *indices):
+        """ Indices is an array of nodes that specifies the order of marked 
+        nodes that you want to execute.
+        """
+        self.indices = indices
 
     def __repr__(self):
         return "x_i"
@@ -132,8 +135,6 @@ class DCSTree(object):
         self.stores = None # for marked nodes
 
     def add_child(self, relation, child):
-        """
-        """
         assert isinstance(child, DCSTree)
         assert isinstance(relation, Relation)
         self.edges.append((relation, child,))
@@ -176,7 +177,6 @@ class DCSTree(object):
         if not self.is_grounded():
             raise NotImplemented()
     
-        
         for relation, child in self.edges:
             self.denotation = relation(self, child)
 
@@ -301,9 +301,9 @@ tfb.add_child(Join(1,2), am)
 
 null = DCSTree()
 population = DCSTree("population")
-population.denotation = [("New York",11), ("Boston", 1), ("New Jersey", 3)]
+population.denotation = [("New York",11), ("Boston", 1), ("Miami", 3)]
 city = DCSTree("city")
-city.denotation = [("New York",), ("Boston",), ("New Jersey",)]
+city.denotation = [("New York",), ("Boston",), ("Miami",)]
 null.add_child(Aggregate(), population)
 population.add_child(Join(1,1), city)
 print null.ground(1)
