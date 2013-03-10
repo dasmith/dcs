@@ -2,16 +2,19 @@
 # -*- coding: utf-8 -*-
 """
 Dependency-based compositional semantics (DCS)
-    Percy Liang's 2011 PhD Thesis.
-    Implemented in Python by Dustin Smith.
+  - DCS's motivation was "to create a transparent interface between syntax and semantics."
+  
+References:
+    [1] Percy Liang's 2011 PhD Thesis.
 
-DCS's motivation was "to create a transparent interface between syntax and semantics."
 """
 
 import itertools
 import inspect
 from collections import defaultdict
-NULL = [] 
+from geo_db import *
+
+NULL = ('NULL',)
 
 class Relation(object):
     """  A procedure that is applied to two trees """
@@ -31,22 +34,44 @@ class Join(Relation):
     def lambda_formula(self, parent, child):
         return "%s = %s" % (parent, child)
 
-    def join_function(self, pc):
-        print pc[0][self.parent_index-1], pc[1][self.child_index-1],pc[0][self.parent_index-1]== pc[1][self.child_index-1]
-        
-        return pc[0][self.parent_index-1] == pc[1][self.child_index-1]
 
     def __call__(self, parent, child):
         """ Takes a cross product of tuples (the denotations of parent and child)
         and extracts all tuples that match the equality constraint.
         Then it "projects" the results and only takes those up to the parent's arity"""
-
         # we dont keep stores in the denotation, so we don't have to remove them.
         results = []
-        for match in filter(self.join_function, itertools.product(parent.denotation, child.denotation)):
+        self.twice = True 
+        self.once = True
+        print "\n\ncalled", parent.predicate,
+        if child.denotation is not None: 
+            print len(child.denotation)
+        else:
+            print "Null child"
+        print "first c", child.denotation[0]
+
+        def join_function(pc):
+            if self.once:
+                print pc
+                print pc[0][self.parent_index-1], pc[1][self.child_index-1]
+                self.once = False
+            return pc[0][self.parent_index-1] == pc[1][self.child_index-1]
+
+        def detuple(pc):
+            # and de-child
+            #if not isinstance(pc[0], tuple):
+            #    return tuple(pc[0])# + pc[1]
+            return pc[0] #+ pc[1]
+
+        for match in map(detuple, filter(join_function,\
+                itertools.product(parent.denotation, child.denotation))):
             # the projection stage -- take the subset of the tuples corresponding
             # to the arity of the parent's predicate
-            results.append(match[0:parent.arity][0])
+            if self.twice:
+                print "MATCH", match
+                self.twice = False
+
+            results.append(match)
         
         return results
 
@@ -64,7 +89,9 @@ class Aggregate(Relation):
         return "\sigma"
 
     def __call__(self, parent, child):
-        parent.denotation = set(child.denotation)
+        # enumerate the child
+        print "Called aggregate on", parent.predicate, child.predicate
+        return tuple([child.denotation])
 
 class MarkRelation(Relation):
     """ Takes a denotation, d, a mark relation r in [C,Q,E], and a child denotation c
@@ -148,7 +175,7 @@ class DCSTree(object):
     def is_grounded(self):
         return not self.denotation is None
 
-    def ground(self, world):
+    def ground(self, world=None):
         """
         A denotation consists of n columns, where each column is either the root node
         or a non executed marked node.  Ordered by preorder traversal (self, *children)
@@ -173,7 +200,15 @@ class DCSTree(object):
         # ground all children
         for child in self.get_children():
             child.ground(world)
-
+        
+        # ground itself
+        print "Grounding ", self.predicate, self.predicate in globals()
+        if self.predicate is not None and self.predicate in globals():
+            self.denotation = globals()[self.predicate]()
+        elif self.predicate is not None:
+            c = itertools.chain([c.denotation for c in self.get_children()])
+            self.denotation = [entry + (self.predicate(*entry),) for entry in c]
+        print "DENOTATION", self.denotation
         if not self.is_grounded():
             raise NotImplemented()
     
@@ -263,6 +298,7 @@ def no(a, b):
 def most(a, b):
     return len(a.intersect(b)) > (0.5 * len(a))
 
+
 # superlative and comparative
 # measure function
 def more(measure, a, b):
@@ -272,45 +308,46 @@ def less(measure, a, b):
     return min(measure(a)) < min(measure(b))
 
 #------------------------------------------------------------------------------
-# Join function
+# Join function  (Figure 2.2 from [1])
 #------------------------------------------------------------------------------
-d = DCSTree("city")
-d.add_child(Join(1,1), DCSTree("major"))
-loc = DCSTree("loc")
-d.add_child(Join(1,1), loc)
-loc.add_child(Join(2,1), DCSTree("CA"))
-print d
-print d.lambda_formula()
-print loc.lambda_formula()
-
-# test join
-a = DCSTree("a")
-a.denotation = [("dog", "poodle",), ("cat", "siamese cat",), ("dog", "st. bernard",)]
-b = DCSTree("b")
-b.denotation = [("poodle",), ("shitzu",)]
-a.add_child(Join(2,1), b)
-print a.ground(None)  # => [(dog, poodle)]
+# major cities in ca
+def test_join():
+    d = DCSTree("city")
+    d.add_child(Join(1,1), DCSTree("major"))
+    l = DCSTree("loc")
+    d.add_child(Join(1,1), l)
+    l.add_child(Join(2,1), DCSTree("ca"))
+    assert d.ground() == [('los angeles',), ('san diego',), ('san francisco',), ('san jose',)]
 
 #------------------------------------------------------------------------------
-# Adding Aggregation (Page 15)
+# Aggregation function (Page 14)
 #------------------------------------------------------------------------------
-tfb = DCSTree()  # 24 b
-am = DCSTree(argmax)
-tfb.add_child(Join(1,2), am)
+# number of major cities
+r = DCSTree()
+ct = DCSTree(count)
+agg = DCSTree()
+c = DCSTree("city")
+r.add_child(Join(1,2), ct)
+ct.add_child(Join(1,1), agg)
+agg.add_child(Aggregate(), c)
+c.add_child(Join(1,1), DCSTree("major"))
+print ct.ground()
+
+if False:
+    tfb = DCSTree()  # 24 b
+    am = DCSTree(argmax)
+    tfb.add_child(Join(1,2), am)
 
 
-null = DCSTree()
-population = DCSTree("population")
-population.denotation = [("New York",11), ("Boston", 1), ("Miami", 3)]
-city = DCSTree("city")
-city.denotation = [("New York",), ("Boston",), ("Miami",)]
-null.add_child(Aggregate(), population)
-population.add_child(Join(1,1), city)
-print null.ground(1)
+    null = DCSTree()
+    p= DCSTree("population")
+    c = DCSTree("city")
+    null.add_child(Aggregate(), p)
+    p.add_child(Join(1,1), c)
+    print null.ground(1)
 #print "CITY", city.ground(1)
 #print "POPULATION", population.ground(1)
 
-if False:
 #------------------------------------------------------------------------------
 #------------------------------------------------------------------------------
 # state borders state
